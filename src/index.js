@@ -38,3 +38,9 @@ app.listen(PORT, () => {
 });
 
 export default app; 
+import { checkForNewEmails } from './services/gmail/index.js';
+
+setInterval(() => {
+  console.log("🔍 Checking Gmail...");
+  checkForNewEmails();
+}, 60 * 1000);
