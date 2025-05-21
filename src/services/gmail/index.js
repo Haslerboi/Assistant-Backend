@@ -4,9 +4,8 @@ import { google } from 'googleapis';
 
 /**
  * Create and authorize a Gmail OAuth2 client
- * @returns {Promise<Object>} - The authorized OAuth2 client
  */
-export const createOAuth2Client = async () => {
+const createOAuth2Client = async () => {
   try {
     console.log('Creating Gmail OAuth2 client with credentials');
 
@@ -29,9 +28,8 @@ export const createOAuth2Client = async () => {
 
 /**
  * Get Gmail API client
- * @returns {Promise<Object>} - The Gmail API client
  */
-export const getGmailClient = async () => {
+const getGmailClient = async () => {
   try {
     const auth = await createOAuth2Client();
     return google.gmail({ version: 'v1', auth });
@@ -43,10 +41,8 @@ export const getGmailClient = async () => {
 
 /**
  * Fetch recent unread emails with advanced filtering
- * @param {number} maxResults - Maximum number of emails to fetch
- * @returns {Promise<Array>} - Array of filtered email objects
  */
-export const fetchUnreadEmails = async (maxResults = 10) => {
+const fetchUnreadEmails = async (maxResults = 10) => {
   try {
     const gmail = await getGmailClient();
     console.log(`Gmail Service - Fetching unread emails with filtering`);
@@ -161,7 +157,7 @@ export const fetchUnreadEmails = async (maxResults = 10) => {
 /**
  * Mark an email as read
  */
-export const markAsRead = async (messageId) => {
+const markAsRead = async (messageId) => {
   try {
     const gmail = await getGmailClient();
     const response = await gmail.users.messages.modify({
@@ -182,7 +178,7 @@ export const markAsRead = async (messageId) => {
 /**
  * Create a draft email
  */
-export const createDraft = async ({ to, subject, body, threadId }) => {
+const createDraft = async ({ to, subject, body, threadId }) => {
   try {
     const gmail = await getGmailClient();
 
@@ -227,7 +223,7 @@ export const createDraft = async ({ to, subject, body, threadId }) => {
 /**
  * Create a reply draft to an existing thread
  */
-export const createReplyDraft = async (originalMessageId, threadId, replyText, toEmail) => {
+const createReplyDraft = async (originalMessageId, threadId, replyText, toEmail) => {
   try {
     const gmail = await getGmailClient();
 
@@ -290,7 +286,7 @@ export const createReplyDraft = async (originalMessageId, threadId, replyText, t
 /**
  * Send an email (either by sending a draft or creating and sending from data)
  */
-export const sendEmail = async (draftId, emailData) => {
+const sendEmail = async (draftId, emailData) => {
   try {
     const gmail = await getGmailClient();
 
@@ -321,7 +317,7 @@ export const sendEmail = async (draftId, emailData) => {
 /**
  * Check for new client emails and log them (starter polling version)
  */
-export const checkForNewEmails = async () => {
+const checkForNewEmails = async () => {
   try {
     const emails = await fetchUnreadEmails(5);
 
@@ -332,14 +328,13 @@ export const checkForNewEmails = async () => {
 
     for (const email of emails) {
       console.log(`📩 New Email: "${email.subject}" from ${email.sender}`);
-      await markAsRead(email.id); // Mark as processed
+      await markAsRead(email.id);
     }
   } catch (error) {
     console.error('❌ Error in checkForNewEmails:', error.message);
   }
 };
 
-// Final export block
 export {
   createOAuth2Client,
   getGmailClient,
