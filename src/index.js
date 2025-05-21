@@ -4,6 +4,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import { config } from './config/env.js';
 import routes from './routes/index.js';
+import { checkForNewEmails } from './services/gmail/index.js'; // ✅ move this here
 
 const app = express();
 const PORT = config.PORT || 3000;
@@ -37,10 +38,10 @@ app.listen(PORT, () => {
   console.log(`http://localhost:${PORT}`);
 });
 
-export default app; 
-import { checkForNewEmails } from './services/gmail/index.js';
-
+// ✅ Gmail polling loop
 setInterval(() => {
   console.log("🔍 Checking Gmail...");
   checkForNewEmails();
 }, 60 * 1000);
+
+export default app;
