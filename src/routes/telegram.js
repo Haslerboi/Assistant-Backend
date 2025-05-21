@@ -18,15 +18,22 @@ const activeEmails = new Map();
  */
 router.post('/webhook', async (req, res) => {
   try {
+    // Log raw request for debugging
+    console.log('📩 TELEGRAM WEBHOOK RECEIVED - RAW REQUEST:');
+    console.log('Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    
     const update = req.body;
     
     // Verify this is a valid Telegram update
     if (!update || !update.update_id) {
       logger.warn('Received invalid Telegram update', { tag: 'telegram' });
+      console.error('❌ Invalid Telegram update format received');
       return res.status(400).json({ success: false, error: 'Invalid update format' });
     }
     
     logger.info(`Received Telegram update ID: ${update.update_id}`, { tag: 'telegram' });
+    console.log(`✅ Valid Telegram update ID: ${update.update_id}`);
     
     // Handle different types of updates
     if (update.message) {
@@ -40,17 +47,24 @@ router.post('/webhook', async (req, res) => {
         messageText: messageText.substring(0, 100) // Log first 100 chars to avoid huge logs
       });
       
+      console.log(`📝 Telegram message from ${chatId}: "${messageText.substring(0, 100)}${messageText.length > 100 ? '...' : ''}"`);
+      
       // Process the message
       if (messageText && messageText.startsWith('/')) {
         // This is a command
+        console.log(`🤖 Processing Telegram command: ${messageText}`);
         const result = telegramController.handleCommandMessage(update.message);
+        console.log('Command processing result:', result);
         // Process command (will be implemented in the future)
       } else {
         // This is a regular message
+        console.log('🔄 Processing Telegram message as potential answer...');
         const result = telegramController.handleIncomingMessage(update.message);
+        console.log('Message processing result:', result);
         
         // If this message contains answers, process them
         if (result.success && result.type === 'answers') {
+          console.log(`✅ Found ${Object.keys(result.data).length} answers in message`);
           logger.info(`Processing ${Object.keys(result.data).length} answers from user ${result.userId}`, { 
             tag: 'telegram',
             answers: result.data
@@ -60,6 +74,7 @@ router.post('/webhook', async (req, res) => {
           const emailData = activeEmails.get(chatId);
           
           if (emailData && emailData.questions) {
+            console.log('✅ Found matching active email for this chat');
             try {
               // Match numbered answers to original questions
               const finalAnswersObject = telegramParser.matchAnswersToQuestions(
@@ -67,6 +82,7 @@ router.post('/webhook', async (req, res) => {
                 result.data
               );
               
+              console.log('✅ Successfully matched answers to questions:', finalAnswersObject);
               logger.info('Matched answers to questions', { 
                 tag: 'telegram',
                 matchedAnswers: finalAnswersObject 
@@ -75,7 +91,7 @@ router.post('/webhook', async (req, res) => {
               // Debug log to check email object fields
               console.log('Email object being passed to generateReply:', {
                 subject: emailData.originalEmail.subject,
-                body: emailData.originalEmail.body,
+                body: emailData.originalEmail.body ? emailData.originalEmail.body.substring(0, 100) + '...' : null,
                 sender: emailData.originalEmail.sender
               });
 
@@ -94,12 +110,16 @@ router.post('/webhook', async (req, res) => {
               }
               
               // Generate reply using OpenAI
+              console.log('🤖 Generating reply using OpenAI...');
               const draftText = await openaiService.generateReply(
                 emailData.originalEmail,
                 finalAnswersObject
               );
               
+              console.log('✅ Reply generated successfully:', draftText.replyText.substring(0, 100) + '...');
+              
               // Send the draft back to the user
+              console.log('📤 Sending draft back to user...');
               await telegramService.sendMessage(
                 chatId,
                 `<b>📝 Here's the draft reply:</b>\n\n${draftText.replyText}`,
@@ -108,11 +128,15 @@ router.post('/webhook', async (req, res) => {
               
               // Clear the active email data
               activeEmails.delete(chatId);
+              console.log('✅ Cleared active email data for chat');
             } catch (error) {
               logger.error(`Error generating reply: ${error.message}`, { 
                 tag: 'telegram', 
                 error: error.stack 
               });
+              
+              console.error('❌ Error generating reply:', error);
+              console.error('Error stack:', error.stack || error);
               
               // Notify the user about the error
               await telegramService.sendMessage(
@@ -122,6 +146,7 @@ router.post('/webhook', async (req, res) => {
               );
             }
           } else {
+            console.log('❌ No active email found for this chat');
             // No active email found
             await telegramService.sendMessage(
               chatId,
@@ -129,17 +154,25 @@ router.post('/webhook', async (req, res) => {
               { parseMode: 'HTML' }
             );
           }
+        } else {
+          console.log('ℹ️ Message did not contain answers, treating as general message');
         }
       }
+    } else {
+      console.log('ℹ️ Telegram update does not contain a message');
     }
     
     // Always respond with 200 OK to Telegram
+    console.log('📤 Sending 200 OK response to Telegram webhook');
     res.status(200).json({ success: true });
   } catch (error) {
     logger.error(`Error processing Telegram webhook: ${error.message}`, { 
       tag: 'telegram', 
       error: error.stack 
     });
+    
+    console.error('❌ Error processing Telegram webhook:', error);
+    console.error('Error stack:', error.stack || error);
     
     // Always respond with 200 OK to Telegram even on error
     // This prevents Telegram from retrying the request
@@ -196,13 +229,59 @@ router.post('/send-email-questions', async (req, res) => {
  */
 router.get('/setup-webhook', async (req, res) => {
   try {
-    // This endpoint would be implemented to set up the webhook with Telegram
-    // For now, just return instructions
+    // Get the full URL for the webhook endpoint
+    const baseUrl = req.protocol + '://' + req.get('host');
+    const webhookUrl = `${baseUrl}/api/telegram/webhook`;
+    
+    console.log(`Setting up Telegram webhook with URL: ${webhookUrl}`);
+    
+    if (!config.telegram?.botToken) {
+      const error = 'Telegram bot token is not configured';
+      console.error('❌ ' + error);
+      return res.status(500).json({ 
+        success: false, 
+        error 
+      });
+    }
+    
+    // Make request to Telegram API to set webhook
+    const telegramApiUrl = `https://api.telegram.org/bot${config.telegram.botToken}/setWebhook`;
+    console.log(`Calling Telegram API: ${telegramApiUrl}`);
+    
+    const response = await fetch(telegramApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        url: webhookUrl,
+        allowed_updates: ['message', 'callback_query']
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      const errorMessage = `Telegram API error: ${errorData.description || response.statusText}`;
+      console.error('❌ ' + errorMessage);
+      return res.status(500).json({ 
+        success: false, 
+        error: errorMessage 
+      });
+    }
+    
+    const data = await response.json();
+    console.log('✅ Telegram webhook setup response:', data);
+    
+    // Also fetch webhook info to verify
+    const infoResponse = await fetch(`https://api.telegram.org/bot${config.telegram.botToken}/getWebhookInfo`);
+    const infoData = await infoResponse.json();
+    
     res.json({
       success: true,
-      message: 'Webhook setup endpoint (to be implemented)',
-      instructions: 'To set up your webhook manually, visit: ' +
-        `https://api.telegram.org/bot${config.telegram.botToken}/setWebhook?url=https://your-domain.com/api/telegram/webhook`
+      message: 'Webhook successfully configured',
+      webhookUrl,
+      setupResponse: data,
+      webhookInfo: infoData.result
     });
   } catch (error) {
     logger.error(`Error setting up Telegram webhook: ${error.message}`, { 
@@ -210,9 +289,134 @@ router.get('/setup-webhook', async (req, res) => {
       error: error.stack 
     });
     
+    console.error('❌ Error setting up webhook:', error);
+    
     res.status(500).json({ 
       success: false, 
-      error: 'Failed to set up webhook' 
+      error: 'Failed to set up webhook: ' + error.message
+    });
+  }
+});
+
+/**
+ * GET /webhook-status
+ * Check current webhook status
+ */
+router.get('/webhook-status', async (req, res) => {
+  try {
+    console.log('Checking Telegram webhook status');
+    
+    if (!config.telegram?.botToken) {
+      const error = 'Telegram bot token is not configured';
+      console.error('❌ ' + error);
+      return res.status(500).json({ 
+        success: false, 
+        error 
+      });
+    }
+    
+    // Make request to Telegram API to get webhook info
+    const infoResponse = await fetch(`https://api.telegram.org/bot${config.telegram.botToken}/getWebhookInfo`);
+    
+    if (!infoResponse.ok) {
+      const errorData = await infoResponse.json();
+      const errorMessage = `Telegram API error: ${errorData.description || infoResponse.statusText}`;
+      console.error('❌ ' + errorMessage);
+      return res.status(500).json({ 
+        success: false, 
+        error: errorMessage 
+      });
+    }
+    
+    const infoData = await infoResponse.json();
+    console.log('✅ Telegram webhook info:', infoData);
+    
+    // Check if the webhook is properly set up
+    const webhookInfo = infoData.result;
+    const isConfigured = !!webhookInfo.url;
+    const isPendingUpdates = webhookInfo.pending_update_count > 0;
+    
+    res.json({
+      success: true,
+      status: isConfigured ? 'configured' : 'not_configured',
+      webhookInfo,
+      pendingUpdates: webhookInfo.pending_update_count,
+      hasPendingUpdates: isPendingUpdates,
+      lastErrorMessage: webhookInfo.last_error_message || null,
+      lastErrorTime: webhookInfo.last_error_date ? new Date(webhookInfo.last_error_date * 1000).toISOString() : null
+    });
+  } catch (error) {
+    logger.error(`Error checking Telegram webhook status: ${error.message}`, { 
+      tag: 'telegram',
+      error: error.stack 
+    });
+    
+    console.error('❌ Error checking webhook status:', error);
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to check webhook status: ' + error.message
+    });
+  }
+});
+
+/**
+ * GET /send-test-message
+ * Send a test message to the configured chat ID
+ */
+router.get('/send-test-message', async (req, res) => {
+  try {
+    console.log('Sending test message to Telegram');
+    
+    if (!config.telegram?.botToken) {
+      const error = 'Telegram bot token is not configured';
+      console.error('❌ ' + error);
+      return res.status(500).json({ 
+        success: false, 
+        error 
+      });
+    }
+    
+    if (!config.telegram?.chatId) {
+      const error = 'Telegram chat ID is not configured';
+      console.error('❌ ' + error);
+      return res.status(500).json({ 
+        success: false, 
+        error 
+      });
+    }
+    
+    // Send a test message via the service
+    const timestamp = new Date().toISOString();
+    const message = `🧪 Test message from Email Assistant API\n\nThis is a test message sent at ${timestamp} to verify Telegram integration is working correctly.\n\nReply with "test" to check if webhook is receiving messages.`;
+    
+    console.log(`Sending test message to chat ID: ${config.telegram.chatId}`);
+    const result = await telegramService.sendMessage(
+      config.telegram.chatId,
+      message,
+      { parseMode: 'HTML' }
+    );
+    
+    console.log('✅ Test message sent:', result);
+    
+    res.json({
+      success: true,
+      message: 'Test message sent successfully',
+      sentTo: config.telegram.chatId,
+      timestamp,
+      result
+    });
+  } catch (error) {
+    logger.error(`Error sending test message: ${error.message}`, { 
+      tag: 'telegram',
+      error: error.stack 
+    });
+    
+    console.error('❌ Error sending test message:', error);
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to send test message: ' + error.message
     });
   }
 });
