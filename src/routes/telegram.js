@@ -58,16 +58,16 @@ router.post('/webhook', async (req, res) => {
         // Process command (will be implemented in the future)
       } else {
         // This is a regular message
-        console.log('🔄 Processing Telegram message as potential answer...');
+        console.log('🔄 Processing Telegram message as potential response...');
         const result = telegramController.handleIncomingMessage(update.message);
         console.log('Message processing result:', result);
         
-        // If this message contains answers, process them
+        // All text messages are now treated as answers/responses
         if (result.success && result.type === 'answers') {
-          console.log(`✅ Found ${Object.keys(result.data).length} answers in message`);
-          logger.info(`Processing ${Object.keys(result.data).length} answers from user ${result.userId}`, { 
+          console.log(`✅ Received response: "${result.originalText.substring(0, 50)}${result.originalText.length > 50 ? '...' : ''}"`);
+          logger.info(`Processing response from user ${result.userId}`, { 
             tag: 'telegram',
-            answers: result.data
+            responseLength: result.originalText?.length || 0
           });
           
           // Check if we have an active email for this chat
@@ -76,16 +76,16 @@ router.post('/webhook', async (req, res) => {
           if (emailData && emailData.questions) {
             console.log('✅ Found matching active email for this chat');
             try {
-              // Match numbered answers to original questions
+              // Match user's response to questions
               const finalAnswersObject = telegramParser.matchAnswersToQuestions(
                 emailData.questions,
                 result.data
               );
               
-              console.log('✅ Successfully matched answers to questions:', finalAnswersObject);
-              logger.info('Matched answers to questions', { 
+              console.log('✅ Processed user response:', finalAnswersObject);
+              logger.info('User response processed', { 
                 tag: 'telegram',
-                matchedAnswers: finalAnswersObject 
+                response: finalAnswersObject 
               });
               
               // Debug log to check email object fields
@@ -126,6 +126,33 @@ router.post('/webhook', async (req, res) => {
                 { parseMode: 'HTML' }
               );
               
+              // Save draft to Gmail
+              console.log('💾 Saving draft to Gmail...');
+              try {
+                const gmailService = await import('../services/gmail/index.js');
+                await gmailService.createDraft(
+                  emailData.originalEmail.threadId,
+                  emailData.originalEmail.sender,
+                  emailData.originalEmail.subject,
+                  draftText.replyText
+                );
+                console.log('✅ Draft saved to Gmail successfully');
+                
+                // Notify user that draft was saved
+                await telegramService.sendMessage(
+                  chatId,
+                  '✅ Draft has been saved to your Gmail drafts folder',
+                  { parseMode: 'HTML' }
+                );
+              } catch (draftError) {
+                console.error('❌ Error saving draft to Gmail:', draftError);
+                await telegramService.sendMessage(
+                  chatId,
+                  '⚠️ Draft was generated but could not be saved to Gmail',
+                  { parseMode: 'HTML' }
+                );
+              }
+              
               // Clear the active email data
               activeEmails.delete(chatId);
               console.log('✅ Cleared active email data for chat');
@@ -155,7 +182,7 @@ router.post('/webhook', async (req, res) => {
             );
           }
         } else {
-          console.log('ℹ️ Message did not contain answers, treating as general message');
+          console.log('ℹ️ Message could not be processed:', result.error || 'Unknown error');
         }
       }
     } else {

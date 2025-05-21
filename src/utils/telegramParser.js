@@ -6,47 +6,23 @@
  */
 
 /**
- * Parse a Telegram message containing numbered answers
- * Accepts formats like:
- * - 1. Yes
- * - 2. $1300 + GST
- * - 3: Friday afternoon
- * - 1 - Yes
- * - 1)Yes
+ * Parse a Telegram message containing any text
+ * Now accepts any format - no specific formatting required
+ * Works with any language and message structure
  * 
  * @param {string} messageText - The message text to parse
- * @returns {Object} - An object with question numbers as keys and answers as values
+ * @returns {Object} - An object with the full message text
  */
 export const parseNumberedAnswers = (messageText) => {
   if (!messageText || typeof messageText !== 'string') {
     return {};
   }
 
-  const answers = {};
-  const lines = messageText.split('\n');
-
-  for (const line of lines) {
-    // Skip empty lines
-    if (!line.trim()) continue;
-
-    // Match different numbering formats
-    // This regex captures:
-    // - A number at the start of the line
-    // - Optional separator (., :, -, ), etc.)
-    // - The rest of the line as the answer
-    const match = line.trim().match(/^(\d+)(?:[.:\-\)\s]+)?\s*(.+)$/);
-
-    if (match) {
-      const questionNumber = parseInt(match[1], 10);
-      const answer = match[2].trim();
-      
-      if (!isNaN(questionNumber) && answer) {
-        answers[questionNumber] = answer;
-      }
-    }
-  }
-
-  return answers;
+  // Instead of parsing for numbered answers, we now just return the full message
+  // This enables support for any language and free-form text
+  return {
+    1: messageText.trim() // Store the entire message as answer #1
+  };
 };
 
 /**
@@ -87,29 +63,33 @@ export const convertQFormatToNumbered = (messageText) => {
 };
 
 /**
- * Match numbered answers to original questions
+ * Match answers to original questions
+ * Modified to work with any free-form text response
+ * 
  * @param {Array<string>} questions - The original questions array
- * @param {Object} answers - The numbered answers object (keys are numbers, values are answer strings)
- * @returns {Object} - A new object with questions as keys and answers as values
+ * @param {Object} answers - The answer object containing the full message
+ * @returns {Object} - A new object with questions and the full message response
  */
 export const matchAnswersToQuestions = (questions, answers) => {
   if (!Array.isArray(questions) || !questions.length || !answers || typeof answers !== 'object') {
     return {};
   }
 
-  const matchedResult = {};
+  // Get the full message text (stored as answer #1)
+  const fullMessage = answers[1];
   
-  // Iterate through questions and match with corresponding answers
-  questions.forEach((question, index) => {
-    // Questions array is 0-indexed, but answer numbers are 1-indexed
-    const answerNumber = index + 1;
-    
-    if (answers[answerNumber]) {
-      matchedResult[question] = answers[answerNumber];
-    }
-  });
+  // Create a result that maps all questions to the same full message
+  // This ensures the AI gets the full context when generating a reply
+  const result = {
+    fullMessage: fullMessage
+  };
   
-  return matchedResult;
+  // We also provide the first question mapped to the answer for backward compatibility
+  if (questions[0]) {
+    result[questions[0]] = fullMessage;
+  }
+  
+  return result;
 };
 
 export default {

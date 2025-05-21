@@ -15,28 +15,18 @@ export const handleIncomingMessage = (message) => {
 
     logger.info('Processing incoming Telegram message', { tag: 'telegram' });
 
-    // Check if message contains numbered answers
+    // Every text message is now considered a valid answer
+    // We use the parser for consistent return format
     const answers = telegramParser.parseNumberedAnswers(message.text);
     
-    // If we found at least one numbered answer
-    if (Object.keys(answers).length > 0) {
-      logger.info(`Extracted ${Object.keys(answers).length} answers from message`, { tag: 'telegram' });
-      
-      return {
-        success: true,
-        type: 'answers',
-        data: answers,
-        chatId: message.chat?.id,
-        userId: message.from?.id,
-        messageId: message.message_id
-      };
-    }
+    // All messages are considered answers/responses
+    logger.info(`Extracted user response (${message.text.length} chars)`, { tag: 'telegram' });
     
-    // If no numbered answers found, treat as general response
     return {
       success: true,
-      type: 'message',
-      data: { text: message.text },
+      type: 'answers',
+      data: answers,
+      originalText: message.text, // Store the original text for context
       chatId: message.chat?.id,
       userId: message.from?.id,
       messageId: message.message_id
