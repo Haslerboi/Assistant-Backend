@@ -103,21 +103,36 @@ export const sendTelegramMessage = async (params) => {
 
     console.log(`Sending Telegram notification to chat ID: ${chatId}`);
     
+    // Escape HTML entities in text fields to prevent parsing errors
+    const escapeHtml = (text) => {
+      if (!text) return '';
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    };
+    
+    const sender = escapeHtml(params.email.sender);
+    const subject = escapeHtml(params.email.subject);
+    const action = escapeHtml(params.action || 'No action taken');
+    
     // Format email details with action taken
     let messageText = `
 📩 <b>New Email</b>
 
-<b>From:</b> ${params.email.sender}
-<b>Subject:</b> ${params.email.subject}
+<b>From:</b> ${sender}
+<b>Subject:</b> ${subject}
 <b>Status:</b> ${params.classification === 'auto_draft' ? '✅ Auto-draft' : '❓ Needs input'}
-<b>Action:</b> ${params.action || 'No action taken'}
+<b>Action:</b> ${action}
 `;
 
     // If there are questions, add them to the message
     if (params.questions && params.questions.length > 0) {
       messageText += `\n<b>Please answer these questions:</b>`;
       params.questions.forEach((question, index) => {
-        messageText += `\n${index + 1}. ${question}`;
+        messageText += `\n${index + 1}. ${escapeHtml(question)}`;
       });
       messageText += `\n\nReply with numbered answers (e.g., "1. Yes, 2. Tomorrow")`;
     } else if (params.classification === 'auto_draft') {
