@@ -71,11 +71,16 @@ export const sendMessage = async (chatId, text, options = {}) => {
 };
 
 /**
- * Send a simple Telegram message using the node-telegram-bot-api package
- * @param {string} messageText - The message text to send
+ * Send a Telegram notification with email details and actions taken
+ * @param {Object} params - Message parameters
+ * @param {string} params.to - The chat ID to send to
+ * @param {Object} params.email - The email object with details
+ * @param {Array} params.questions - Questions extracted from the email (if any)
+ * @param {string} params.action - What action was taken (e.g., "Created draft reply")
+ * @param {string} params.classification - Email classification (auto_draft or needs_input)
  * @returns {Promise<Object>} - The result of the send operation
  */
-export const sendTelegramMessage = async (messageText) => {
+export const sendTelegramMessage = async (params) => {
   try {
     // Check if Telegram is configured
     if (!config.telegram?.botToken) {
@@ -83,34 +88,59 @@ export const sendTelegramMessage = async (messageText) => {
       return { success: false, error: 'Bot token not configured' };
     }
 
-    if (!config.telegram?.chatId) {
+    // Default to the configured chat ID if not provided
+    const chatId = params.to || config.telegram.chatId;
+
+    if (!chatId) {
       console.error('Error: Telegram chat ID is not configured');
       return { success: false, error: 'Chat ID not configured' };
     }
 
-    if (!messageText || typeof messageText !== 'string') {
-      console.error('Error: Message text is required and must be a string');
-      return { success: false, error: 'Invalid message text' };
+    if (!params.email) {
+      console.error('Error: Email details are required');
+      return { success: false, error: 'Email details missing' };
     }
 
-    console.log(`Sending Telegram message to chat ID: ${config.telegram.chatId}`);
+    console.log(`Sending Telegram notification to chat ID: ${chatId}`);
     
+    // Format email details with action taken
+    let messageText = `
+📩 <b>New Email</b>
+
+<b>From:</b> ${params.email.sender}
+<b>Subject:</b> ${params.email.subject}
+<b>Status:</b> ${params.classification === 'auto_draft' ? '✅ Auto-draft' : '❓ Needs input'}
+<b>Action:</b> ${params.action || 'No action taken'}
+`;
+
+    // If there are questions, add them to the message
+    if (params.questions && params.questions.length > 0) {
+      messageText += `\n<b>Please answer these questions:</b>`;
+      params.questions.forEach((question, index) => {
+        messageText += `\n${index + 1}. ${question}`;
+      });
+      messageText += `\n\nReply with numbered answers (e.g., "1. Yes, 2. Tomorrow")`;
+    } else if (params.classification === 'auto_draft') {
+      // If auto-drafted, add a note about checking drafts
+      messageText += `\n\nA reply has been drafted and saved to your Gmail drafts folder.`;
+    }
+
     // Create Telegram bot instance without polling (just for sending)
     const bot = new TelegramBot(config.telegram.botToken, { polling: false });
     
-    // Send the message
-    const result = await bot.sendMessage(config.telegram.chatId, messageText);
+    // Send the message with HTML formatting
+    const result = await bot.sendMessage(chatId, messageText, { parse_mode: 'HTML' });
     
-    console.log('Telegram message sent successfully!');
+    console.log('Telegram notification sent successfully!');
     
     return {
       success: true,
       messageId: result.message_id,
-      chatId: config.telegram.chatId,
+      chatId: chatId,
       sentAt: new Date().toISOString()
     };
   } catch (error) {
-    console.error(`Error sending Telegram message: ${error.message}`);
+    console.error(`Error sending Telegram notification: ${error.message}`);
     return { 
       success: false, 
       error: error.message

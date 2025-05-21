@@ -1,7 +1,7 @@
 // Gmail service for interacting with Gmail API
 import { config } from '../../config/env.js';
 import { google } from 'googleapis';
-import { classifyEmail, generateReply } from '../openai/index.js';
+import { classifyEmail, classifyEmailForPhotographer, generateReply } from '../openai/index.js';
 import { sendTelegramMessage } from '../telegram/index.js';
 
 const createOAuth2Client = async () => {
@@ -120,6 +120,50 @@ const markAsRead = async (messageId) => {
   }
 };
 
+/**
+ * Create a draft reply to an email
+ * @param {string} threadId - The thread ID to reply to
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} messageText - Email body content
+ * @returns {Promise<Object>} - Created draft data
+ */
+const createDraft = async (threadId, to, subject, messageText) => {
+  try {
+    const gmail = await getGmailClient();
+    
+    // Ensure subject has Re: prefix if not already present
+    const fullSubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
+    
+    // Construct email content
+    const emailContent = [
+      `To: ${to}`,
+      `Subject: ${fullSubject}`,
+      'Content-Type: text/plain; charset=utf-8',
+      'MIME-Version: 1.0',
+      '',
+      messageText
+    ].join('\r\n');
+    
+    // Create the draft
+    const response = await gmail.users.drafts.create({
+      userId: 'me',
+      requestBody: {
+        message: {
+          threadId,
+          raw: Buffer.from(emailContent).toString('base64url')
+        }
+      }
+    });
+    
+    console.log(`Draft created: "${fullSubject}" for thread ${threadId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error creating draft:', error);
+    throw new Error(`Failed to create draft: ${error.message}`);
+  }
+};
+
 const checkForNewEmails = async () => {
   try {
     const emails = await fetchUnreadEmails(5);
@@ -130,13 +174,13 @@ const checkForNewEmails = async () => {
       await markAsRead(email.id);
 
       // Debug log to check email object fields
-      console.log('Email object being passed to classifyEmail:', {
+      console.log('Email object being passed to classifyEmailForPhotographer:', {
         subject: email.subject,
         body: email.body,
         sender: email.sender
       });
 
-      // Ensure required fields are present and create a sanitized email object
+      // Ensure required fields are present
       const sanitizedEmail = {
         subject: email.subject || '[No Subject]',
         body: email.body || '',
@@ -152,13 +196,45 @@ const checkForNewEmails = async () => {
         });
       }
         
-      const result = await classifyEmail(sanitizedEmail);
+      // Use photographer-specific classification instead of generic classification
+      const classificationResult = await classifyEmailForPhotographer(sanitizedEmail.body);
+      console.log(`Email classified as: ${classificationResult.classification} with ${classificationResult.questions?.length || 0} questions`);
       
-      if (result.classification === 'needs_input') {
+      if (classificationResult.classification === 'auto_draft') {
+        try {
+          // Generate reply automatically
+          const draftResult = await generateReply(sanitizedEmail);
+          
+          // Save as draft in Gmail
+          await createDraft(
+            email.threadId, 
+            email.sender, 
+            sanitizedEmail.subject, 
+            draftResult.replyText
+          );
+          
+          console.log(`Auto-drafted reply saved for email "${sanitizedEmail.subject}"`);
+          // No Telegram notification for auto-drafted emails
+        } catch (draftError) {
+          console.error('Error creating automatic draft:', draftError);
+          
+          // If auto-drafting fails, notify via Telegram
+          await sendTelegramMessage({
+            to: config.telegram.chatId,
+            email: sanitizedEmail,
+            questions: [],
+            action: `Failed to create draft: ${draftError.message}`,
+            classification: 'error'
+          });
+        }
+      } else {
+        // Only send Telegram notification for emails that need input
         await sendTelegramMessage({
           to: config.telegram.chatId,
-          email,
-          questions: result.questions
+          email: sanitizedEmail,
+          questions: classificationResult.questions || [],
+          action: 'Needs your input',
+          classification: 'needs_input'
         });
       }
     }
@@ -172,5 +248,6 @@ export {
   getGmailClient,
   fetchUnreadEmails,
   markAsRead,
+  createDraft,
   checkForNewEmails
 };
