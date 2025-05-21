@@ -130,7 +130,23 @@ const markAsRead = async (messageId) => {
  */
 const createDraft = async (threadId, to, subject, messageText) => {
   try {
+    console.log(`Creating draft for thread: ${threadId}`);
+    console.log(`To: ${to}`);
+    console.log(`Subject: ${subject}`);
+    console.log(`Message length: ${messageText.length} chars`);
+    
+    if (!threadId) {
+      console.error('No threadId provided to createDraft');
+      throw new Error('ThreadId is required for creating a draft');
+    }
+    
+    if (!to) {
+      console.error('No recipient (to) provided to createDraft');
+      throw new Error('Recipient email is required for creating a draft');
+    }
+    
     const gmail = await getGmailClient();
+    console.log('Gmail client created successfully');
     
     // Ensure subject has Re: prefix if not already present
     const fullSubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
@@ -145,7 +161,13 @@ const createDraft = async (threadId, to, subject, messageText) => {
       messageText
     ].join('\r\n');
     
+    console.log('Email content constructed, preparing to create draft');
+    
+    // Log the raw format for debugging
+    console.log('Raw email content (first 200 chars):', emailContent.substring(0, 200));
+    
     // Create the draft
+    console.log('Sending draft creation request to Gmail API...');
     const response = await gmail.users.drafts.create({
       userId: 'me',
       requestBody: {
@@ -156,10 +178,17 @@ const createDraft = async (threadId, to, subject, messageText) => {
       }
     });
     
+    if (!response || !response.data) {
+      console.error('Empty response from Gmail API draft creation');
+      throw new Error('Failed to create draft: Empty response from Gmail API');
+    }
+    
+    console.log(`✅ Draft created successfully with ID: ${response.data.id || 'unknown'}`);
     console.log(`Draft created: "${fullSubject}" for thread ${threadId}`);
     return response.data;
   } catch (error) {
-    console.error('Error creating draft:', error);
+    console.error('❌ Error creating draft:', error);
+    console.error('Error details:', error.stack || error);
     throw new Error(`Failed to create draft: ${error.message}`);
   }
 };
@@ -176,7 +205,7 @@ const checkForNewEmails = async () => {
       // Debug log to check email object fields
       console.log('Email object being passed to classifyEmailForPhotographer:', {
         subject: email.subject,
-        body: email.body,
+        body: email.body ? email.body.substring(0, 100) + '...' : null,
         sender: email.sender
       });
 
@@ -201,11 +230,18 @@ const checkForNewEmails = async () => {
       console.log(`Email classified as: ${classificationResult.classification} with ${classificationResult.questions?.length || 0} questions`);
       
       if (classificationResult.classification === 'auto_draft') {
+        console.log('🤖 AUTO-DRAFT: Starting automatic reply generation for:', sanitizedEmail.subject);
         try {
+          // Debug: Check OpenAI API key
+          console.log('OpenAI API key available:', !!config.openai.apiKey);
+          
           // Generate reply automatically
+          console.log('Calling OpenAI API to generate reply...');
           const draftResult = await generateReply(sanitizedEmail);
+          console.log('Reply generated successfully, length:', draftResult.replyText.length);
           
           // Save as draft in Gmail
+          console.log('Creating Gmail draft with threadId:', email.threadId);
           await createDraft(
             email.threadId, 
             email.sender, 
@@ -213,10 +249,11 @@ const checkForNewEmails = async () => {
             draftResult.replyText
           );
           
-          console.log(`Auto-drafted reply saved for email "${sanitizedEmail.subject}"`);
+          console.log(`✅ Auto-drafted reply saved for email "${sanitizedEmail.subject}"`);
           // No Telegram notification for auto-drafted emails
         } catch (draftError) {
-          console.error('Error creating automatic draft:', draftError);
+          console.error('❌ Error creating automatic draft:', draftError);
+          console.error('Error details:', draftError.stack || draftError);
           
           // If auto-drafting fails, notify via Telegram
           await sendTelegramMessage({
@@ -228,6 +265,7 @@ const checkForNewEmails = async () => {
           });
         }
       } else {
+        console.log('👤 NEEDS INPUT: Email requires human input');
         // Only send Telegram notification for emails that need input
         await sendTelegramMessage({
           to: config.telegram.chatId,
@@ -240,6 +278,7 @@ const checkForNewEmails = async () => {
     }
   } catch (error) {
     console.error('❌ Error in checkForNewEmails:', error.message);
+    console.error('Error stack:', error.stack);
   }
 };
 

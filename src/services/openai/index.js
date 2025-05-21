@@ -272,6 +272,7 @@ export const generateReply = async (originalEmail, answers = null) => {
       // Fallback to simple reply when API is unavailable
       const replyContent = `Hello,\n\nThank you for your email regarding "${subject}". I'll get back to you with more information soon.\n\nBest regards,\nEmail Assistant`;
       
+      console.log('Using fallback reply (no OpenAI API key)');
       return {
         replyText: replyContent,
         suggestedSubject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
@@ -287,6 +288,9 @@ export const generateReply = async (originalEmail, answers = null) => {
       for (const [question, answer] of Object.entries(answers)) {
         answersContent += `Question: ${question}\nAnswer: ${answer}\n\n`;
       }
+      console.log(`Including ${Object.keys(answers).length} user-provided answers in the prompt`);
+    } else {
+      console.log('No user answers provided, generating reply using general knowledge');
     }
 
     // Prepare the prompt for OpenAI
@@ -303,37 +307,60 @@ ${answersContent ? answersContent : 'No specific answers were provided by the bu
 
 Write only the body of the reply email. Do not include any headers, signatures, or formatting outside the actual reply content. Reply as if you are the business owner.`;
 
-    // Make request to OpenAI API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.openai.apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o', // Using the latest model, adjust as needed
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-        max_tokens: 800
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
-    }
-
-    const data = await response.json();
-    const replyContent = data.choices[0].message.content.trim();
+    console.log('Sending request to OpenAI API...');
     
-    return {
-      replyText: replyContent,
-      suggestedSubject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
-      tone: 'professional',
-      timestamp: new Date().toISOString(),
-    };
+    // Make request to OpenAI API
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.openai.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o', // Using the latest model, adjust as needed
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          max_tokens: 800
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('OpenAI API error response:', errorData);
+        throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+      }
+
+      console.log('Received successful response from OpenAI API');
+      const data = await response.json();
+      const replyContent = data.choices[0].message.content.trim();
+      console.log('Reply content length:', replyContent.length);
+      
+      return {
+        replyText: replyContent,
+        suggestedSubject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
+        tone: 'professional',
+        timestamp: new Date().toISOString(),
+      };
+    } catch (apiError) {
+      console.error('Error during OpenAI API call:', apiError);
+      console.error('API Error details:', apiError.stack || apiError);
+      
+      // Fallback in case of API error
+      const fallbackReply = `Hello,\n\nThank you for your email regarding "${subject}". I'll get back to you with more information soon.\n\nBest regards,\nEmail Assistant`;
+      
+      console.log('Using fallback reply due to API error');
+      return {
+        replyText: fallbackReply,
+        suggestedSubject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
+        tone: 'professional',
+        timestamp: new Date().toISOString(),
+        error: apiError.message
+      };
+    }
   } catch (error) {
     console.error('Error in OpenAI service:', error);
+    console.error('Error details:', error.stack || error);
     throw new Error('Failed to generate reply: ' + error.message);
   }
 };
