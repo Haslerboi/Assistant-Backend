@@ -129,7 +129,31 @@ const checkForNewEmails = async () => {
       console.log(`📩 New Email: "${email.subject}" from ${email.sender}`);
       await markAsRead(email.id);
 
-      const result = await classifyEmail(email.body);
+      // Debug log to check email object fields
+      console.log('Email object being passed to classifyEmail:', {
+        subject: email.subject,
+        body: email.body,
+        sender: email.sender
+      });
+
+      // Ensure required fields are present and create a sanitized email object
+      const sanitizedEmail = {
+        subject: email.subject || '[No Subject]',
+        body: email.body || '',
+        sender: email.sender || '[Unknown Sender]'
+      };
+      
+      // Log if any fields were missing
+      if (!email.subject || !email.body || !email.sender) {
+        console.error('Missing required email fields:', {
+          hasSubject: !!email.subject,
+          hasBody: !!email.body,
+          hasSender: !!email.sender
+        });
+      }
+        
+      const result = await classifyEmail(sanitizedEmail);
+      
       if (result.classification === 'needs_input') {
         await sendTelegramMessage({
           to: config.telegram.chatId,

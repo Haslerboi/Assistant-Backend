@@ -120,7 +120,15 @@ const extractJsonFromMarkdown = (text) => {
  */
 export const classifyEmailForPhotographer = async (text) => {
   try {
+    // Debug log to check input
+    console.log('Input to classifyEmailForPhotographer:', {
+      text: text ? text.substring(0, 100) + '...' : null, // Log first 100 chars
+      isString: typeof text === 'string',
+      length: text?.length
+    });
+
     if (!text || typeof text !== 'string') {
+      console.error('Invalid input to classifyEmailForPhotographer:', { text });
       throw new Error('Invalid input: text must be a non-empty string');
     }
 

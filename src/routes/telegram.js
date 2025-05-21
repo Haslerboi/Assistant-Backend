@@ -72,6 +72,27 @@ router.post('/webhook', async (req, res) => {
                 matchedAnswers: finalAnswersObject 
               });
               
+              // Debug log to check email object fields
+              console.log('Email object being passed to generateReply:', {
+                subject: emailData.originalEmail.subject,
+                body: emailData.originalEmail.body,
+                sender: emailData.originalEmail.sender
+              });
+
+              // Ensure required fields are present
+              if (!emailData.originalEmail.subject || !emailData.originalEmail.body || !emailData.originalEmail.sender) {
+                logger.warn('Missing required email fields for generateReply', {
+                  hasSubject: !!emailData.originalEmail.subject,
+                  hasBody: !!emailData.originalEmail.body,
+                  hasSender: !!emailData.originalEmail.sender
+                });
+                
+                // Set default values for missing fields
+                emailData.originalEmail.subject = emailData.originalEmail.subject || '[No Subject]';
+                emailData.originalEmail.body = emailData.originalEmail.body || '';
+                emailData.originalEmail.sender = emailData.originalEmail.sender || '[Unknown Sender]';
+              }
+              
               // Generate reply using OpenAI
               const draftText = await openaiService.generateReply(
                 emailData.originalEmail,
