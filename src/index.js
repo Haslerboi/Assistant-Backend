@@ -95,14 +95,54 @@ if (config.telegram.useWebhook) {
     logger.info('Starting Telegram polling service', { tag: 'telegram' });
     import('./services/telegram/polling.js')
       .then(telegramPolling => {
-        // Import the handler dynamically
+        // Import and use processUpdate directly from controller
         import('./controllers/telegram.js')
-          .then(({ handleIncomingMessage }) => {
-            const handleUpdate = (update) => {
-              if (update.message) {
-                return handleIncomingMessage(update.message);
+          .then(telegramController => {
+            // Define the handler that will process updates
+            const handleUpdate = async (update) => {
+              try {
+                if (update.message) {
+                  const message = update.message;
+                  const chatId = message.chat.id;
+                  const text = message.text;
+                  
+                  if (!text) {
+                    console.log('Received non-text message, ignoring');
+                    return { success: false, error: 'Non-text message' };
+                  }
+                  
+                  console.log(`Received message from ${message.from?.first_name || 'user'} (${chatId}): ${text}`);
+                  
+                  // Process the message using our imported services
+                  import('./services/email-state.js')
+                    .then(EmailStateModule => {
+                      const EmailStateManager = EmailStateModule.default;
+                      const activeEmail = EmailStateManager.getEmail(chatId);
+                      
+                      import('./services/telegram/index.js')
+                        .then(async telegramService => {
+                          if (activeEmail) {
+                            // Process response to active email
+                            await telegramService.processEmailResponse(chatId, text, activeEmail);
+                          } else {
+                            // No active email, handle as general user input
+                            await telegramService.handleUserInput(chatId, text);
+                          }
+                        });
+                    });
+                  
+                  return { success: true };
+                }
+                
+                return { success: false, error: 'Unsupported update type' };
+              } catch (error) {
+                logger.error(`Error in handleUpdate: ${error.message}`, {
+                  tag: 'telegram',
+                  error: error.stack
+                });
+                console.error(`❌ Error processing update: ${error.message}`);
+                return { success: false, error: error.message };
               }
-              return { success: false, error: 'Unsupported update type' };
             };
             
             telegramPolling.default.startPolling(handleUpdate, 3000 + Math.random() * 2000);
