@@ -56,7 +56,7 @@ export const processWebhook = async (req, res) => {
  * Process a Telegram update
  * @param {Object} update - The Telegram update object
  */
-const processUpdate = async (update) => {
+export const processUpdate = async (update) => {
   try {
     // Handle message updates
     if (update.message) {
@@ -233,5 +233,6 @@ export default {
   processWebhook,
   setupWebhook,
   deleteWebhook,
-  getWebhookInfo
+  getWebhookInfo,
+  processUpdate
 }; 

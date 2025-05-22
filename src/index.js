@@ -101,40 +101,8 @@ if (config.telegram.useWebhook) {
             // Define the handler that will process updates
             const handleUpdate = async (update) => {
               try {
-                if (update.message) {
-                  const message = update.message;
-                  const chatId = message.chat.id;
-                  const text = message.text;
-                  
-                  if (!text) {
-                    console.log('Received non-text message, ignoring');
-                    return { success: false, error: 'Non-text message' };
-                  }
-                  
-                  console.log(`Received message from ${message.from?.first_name || 'user'} (${chatId}): ${text}`);
-                  
-                  // Process the message using our imported services
-                  import('./services/email-state.js')
-                    .then(EmailStateModule => {
-                      const EmailStateManager = EmailStateModule.default;
-                      const activeEmail = EmailStateManager.getEmail(chatId);
-                      
-                      import('./services/telegram/index.js')
-                        .then(async telegramService => {
-                          if (activeEmail) {
-                            // Process response to active email
-                            await telegramService.processEmailResponse(chatId, text, activeEmail);
-                          } else {
-                            // No active email, handle as general user input
-                            await telegramService.handleUserInput(chatId, text);
-                          }
-                        });
-                    });
-                  
-                  return { success: true };
-                }
-                
-                return { success: false, error: 'Unsupported update type' };
+                // Use the processUpdate function from the controller
+                return await telegramController.processUpdate(update);
               } catch (error) {
                 logger.error(`Error in handleUpdate: ${error.message}`, {
                   tag: 'telegram',
